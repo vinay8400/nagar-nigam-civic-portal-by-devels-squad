@@ -10,3 +10,15 @@
 @media(max-width:800px){.admin-dashboard{min-height:calc(100vh - 64px);padding:20px 12px}.admin-heading{align-items:flex-start;flex-direction:column}.admin-heading h1{font-size:25px}.admin-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.admin-stats>div{padding:12px}.admin-photo-grid img{height:160px}.admin-actions{align-items:stretch;flex-direction:column}.admin-actions .primary{width:100%}}
 @media(max-width:430px){.admin-photo-grid{grid-template-columns:1fr}.admin-photo-grid img{height:190px}.admin-report-card{padding:13px}.admin-heading .outline-wide{white-space:normal}}
 @media(max-width:800px){.citizen-resolutions{margin:12px 10px 0}.citizen-resolution-grid{grid-template-columns:1fr}}
+.photo-preview{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;line-height:0}
+.photo-preview:focus-visible{outline:3px solid #075be8;outline-offset:3px;border-radius:9px}
+.photo-unavailable{display:grid;place-items:center;min-height:130px;margin:0;padding:16px;background:#f4f8fd;border-radius:9px;color:#69778d;font-size:12px;text-align:center;line-height:1.5}
+.admin-photo-grid .photo-unavailable{height:220px}
+.image-lightbox-backdrop{position:fixed;inset:0;z-index:1100;display:grid;place-items:center;padding:18px;background:rgba(3,8,18,.94);overscroll-behavior:contain}
+.image-lightbox{position:relative;display:grid;place-items:center;max-width:100%;max-height:calc(100vh - 36px);max-height:calc(100dvh - 36px)}
+.image-lightbox img{display:block;max-width:100%;max-height:calc(100vh - 36px);max-height:calc(100dvh - 36px);object-fit:contain}
+.image-lightbox-close{position:fixed;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));z-index:1;display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid #ffffff70;border-radius:50%;background:#101827;color:#fff;box-shadow:0 3px 14px #0008}
+.image-lightbox-close svg{width:24px;height:24px}
+.image-lightbox-error{margin:0;padding:20px;color:#fff;text-align:center}
+@media(max-width:800px){.image-lightbox-backdrop{padding:12px}.image-lightbox,.image-lightbox img{max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.admin-photo-grid .photo-unavailable{height:160px}}
+@media(max-width:430px){.admin-photo-grid .photo-unavailable{height:190px}}
