@@ -10,7 +10,6 @@ import {
 import { supabase, supabaseReady } from './supabase'
 
 type Report = { id: string; recordId?: string; userId?: string; title: string; category: string; area: string; description?: string; date: string; status: string; photo: string; hasUploadedPhoto?: boolean; resolutionPhoto?: string; lat: number; lng: number }
-type LightboxImage = { src: string; alt: string; failed?: boolean }
 type ComplaintRow = {
   id?: string
   complaint_number?: string | null
@@ -27,8 +26,8 @@ type ComplaintRow = {
   created_at?: string | null
   updated_at?: string | null
 }
+type LightboxImage = { src: string; alt: string; failed?: boolean }
 const RESOLVED_STATUS = 'समाधान हुई'
-const publicResolutionLimit = 6
 const photo = {
   road: 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=700&q=80',
   garbage: 'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=700&q=80',
@@ -63,22 +62,10 @@ function ImagePreview({src,alt,onOpen}:{src:string;alt:string;onOpen:(src:string
   if(!src||failed)return <p className="photo-unavailable">{failed?'तस्वीर लोड नहीं हो सकी।':'तस्वीर उपलब्ध नहीं है।'}</p>
   return <button type="button" className="photo-preview" aria-label={`${alt} — बड़ा देखने के लिए खोलें`} onClick={()=>onOpen(src,alt)}><img src={src} alt={alt} onError={()=>setFailed(true)}/></button>
 }
-async function resolvePublicStorageUrl(path: string | null | undefined, bucket: string): Promise<string> {
-  if (!path) return ''
-  if (path.startsWith('http://') || path.startsWith('https://')) return path
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
-  if (error) {
-    console.error('Could not sign public complaint image:', error)
-    return ''
-  }
-  return data?.signedUrl || ''
-}
 const appRedirectUrl=(search='')=>{const url=new URL(import.meta.env.BASE_URL,window.location.origin);url.search=search;return url.toString()}
 
 export default function App() {
   const [reports,setReports] = useState<Report[]>(initialReports)
-  const [publicResolvedReports,setPublicResolvedReports] = useState<Report[]>([])
-  const [loadingPublicResolved,setLoadingPublicResolved] = useState(true)
   const [activeCategory,setActiveCategory] = useState('road')
   const [selected,setSelected] = useState<Report>(initialReports[0])
   const [mode,setMode] = useState<'Map'|'Satellite'>('Map')
@@ -142,59 +129,6 @@ export default function App() {
     void loadUserPanel();return()=>{alive=false}
   },[sessionUserId,complaintsReload])
 
-  useEffect(()=>{
-    let active = true
-    async function loadPublicResolvedComplaints() {
-      if (!supabaseReady) {
-        setLoadingPublicResolved(false)
-        setPublicResolvedReports([])
-        return
-      }
-      try {
-        const bucket = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || 'complaint-photos'
-        const { data, error } = await supabase
-          .from('complaints')
-          .select('*')
-          .eq('status', RESOLVED_STATUS)
-          .order('updated_at', { ascending: false })
-          .limit(publicResolutionLimit)
-
-        if (error) throw error
-
-        const rows = (data || []) as ComplaintRow[]
-        const mapped = await Promise.all(rows.map(async (row) => {
-          const photoUrl = await resolvePublicStorageUrl(row.photo_url ?? null, bucket)
-          const resolutionPhotoUrl = await resolvePublicStorageUrl(row.resolution_photo_url ?? null, bucket)
-          return {
-            id: row.complaint_number || row.id || 'NN-00000',
-            recordId: row.id || '',
-            userId: row.user_id || '',
-            title: row.title || row.category || 'नागरिक शिकायत',
-            category: row.category || 'other',
-            area: row.address || 'Location unavailable',
-            description: row.description || '',
-            date: row.updated_at ? new Date(row.updated_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'आज',
-            status: row.status || RESOLVED_STATUS,
-            photo: photoUrl,
-            hasUploadedPhoto: Boolean(row.photo_url),
-            resolutionPhoto: resolutionPhotoUrl,
-            lat: Number(row.latitude) || 26.8508,
-            lng: Number(row.longitude) || 80.9462,
-          }
-        }))
-
-        if (active) setPublicResolvedReports(mapped)
-      } catch (error) {
-        console.error('Could not load public resolved complaints:', error)
-        if (active) setPublicResolvedReports([])
-      } finally {
-        if (active) setLoadingPublicResolved(false)
-      }
-    }
-
-    void loadPublicResolvedComplaints()
-    return () => { active = false }
-  }, [])
   async function requestPasswordReset(e:React.FormEvent){e.preventDefault();if(!email.includes('@')){setResetMessage('कृपया registered ईमेल दर्ज करें।');return}setBusy(true);setResetMessage('');try{const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:appRedirectUrl('?auth=reset')});if(error){console.error('Password reset request failed:',error);setResetMessage(error.message);return}setForgotPassword(false);showNotice('अगर इस email पर account है, तो password reset link भेज दिया गया है।')}catch(error){console.error('Password reset request failed:',error);setResetMessage(error instanceof Error?error.message:'Reset email नहीं भेजा जा सका।')}finally{setBusy(false)}}
   async function saveNewPassword(e:React.FormEvent){e.preventDefault();if(resetPassword.length<6){setResetMessage('पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।');return}if(resetPassword!==confirmResetPassword){setResetMessage('दोनों पासवर्ड मेल नहीं खाते।');return}setBusy(true);setResetMessage('');try{const {error}=await supabase.auth.updateUser({password:resetPassword});if(error){console.error('Password update from recovery link failed:',error);const expired=/expired|invalid|session|token/i.test(error.message);setResetPage(expired?'expired':'form');setResetMessage(expired?'यह password reset link अमान्य या expire हो चुका है। नया reset link माँगें।':error.message);return}setResetPassword('');setConfirmResetPassword('');setResetPage('success');setResetMessage('आपका पासवर्ड सफलतापूर्वक बदल गया है।')}catch(error){console.error('Password update from recovery link failed:',error);setResetMessage(error instanceof Error?error.message:'पासवर्ड update नहीं हुआ।')}finally{setBusy(false)}}
   function closeResetPage(){setResetPage(null);setResetPassword('');setConfirmResetPassword('');setResetMessage('');window.history.replaceState(window.history.state,'',window.location.pathname)}
@@ -235,7 +169,6 @@ export default function App() {
         <div className="panel map-panel" id="map"><div className="panel-heading"><h2><MapPin/> शिकायतों का लाइव मानचित्र</h2><div className="map-controls"><button className={mode==='Map'?'selected':''} onClick={()=>setMode('Map')}>Map</button><button className={mode==='Satellite'?'selected':''} onClick={()=>setMode('Satellite')}>Satellite</button></div></div><div className="map-wrap"><MapContainer center={center} zoom={12} scrollWheelZoom={true} zoomControl={true} style={{height:'100%',width:'100%'}}><TileLayer attribution='&copy; OpenStreetMap contributors' url={mode==='Map'?'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png':'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'} /><MapRecenter center={center}/>{reports.map((r,i)=><Marker key={r.id} position={[r.lat,r.lng]} icon={markerIcon(r.status==='समाधान हुई'?'#10a66a':r.status==='प्रक्रिया में'?'#f59e0b':'#e94343')} eventHandlers={{click:()=>setSelected(r)}}><Popup><b>{r.title}</b><br/>{r.area}<br/>{r.status}</Popup></Marker>)}</MapContainer><div className="map-selected"><img src={selected.photo||photo.road} alt={selected.title}/><div><b>{selected.title}</b><small><MapPin size={13}/>{selected.area}</small><small><CalendarDays size={13}/>{selected.date}</small><button onClick={()=>{setTrackId(selected.id);setModal('track')}}>विवरण देखें <ArrowRight size={13}/></button></div><span className={`status ${statusClass(selected.status)}`}>{selected.status}</span></div></div><div className="map-foot"><span><i className="dot red-dot"></i> लंबित</span><span><i className="dot amber-dot"></i> प्रक्रिया में</span><span><i className="dot green-dot"></i> समाधान हुई</span><button onClick={locateMe}><LocateFixed size={14}/> मेरी लोकेशन</button></div></div>
         <div className="panel reports-panel" id="reports"><div className="panel-heading"><h2><ClipboardList/> हाल की शिकायतें</h2><div><button className="link-btn" onClick={()=>setComplaintsReload(value=>value+1)}>Refresh</button><button className="link-btn" onClick={()=>setModal('track')}>सभी देखें <ArrowRight size={15}/></button></div></div><div className="report-list">{reports.slice(0,5).map(r=><button className={`report-row ${selected.id===r.id?'report-current':''}`} key={r.id} onClick={()=>setSelected(r)}><img src={r.photo||photo.road} alt={r.title}/><span className="report-info"><b>{r.title}</b><small><MapPin size={12}/>{r.area}</small><small><CalendarDays size={12}/>{r.date}</small></span><span className={`status ${statusClass(r.status)}`}>{r.status}</span><ArrowRight className="row-arrow" size={16}/></button>)}</div><button className="outline-wide" onClick={()=>setModal('report')}><Plus size={16}/> नई शिकायत दर्ज करें</button></div>
       </section>
-      {loadingPublicResolved ? <section className="citizen-resolutions"><div className="panel-heading"><h2><CheckCircle2/> हमारे सफल समाधान</h2></div><div className="citizen-resolution-grid loading-grid"><div className="loading-card"><span className="skeleton" /><span className="skeleton small" /></div><div className="loading-card"><span className="skeleton" /><span className="skeleton small" /></div></div></section> : publicResolvedReports.length > 0 ? <section className="citizen-resolutions"><div className="panel-heading"><h2><CheckCircle2/> हमारे सफल समाधान</h2></div><div className="citizen-resolution-grid">{publicResolvedReports.map(r=><article key={r.recordId||r.id}><div className="resolution-card-head"><div><b>{r.title}</b><small>{r.id} · {r.area}</small></div><span className={`status ${statusClass(r.status)}`}>{r.status}</span></div><div className="citizen-resolution-photos"><figure>{r.hasUploadedPhoto&&r.photo?<ImagePreview src={r.photo} alt="शिकायत की मूल फोटो" onOpen={(src,alt)=>setLightbox({src,alt})}/>:<p>मूल फोटो उपलब्ध नहीं है।</p>}<figcaption>शिकायत</figcaption></figure><figure>{r.resolutionPhoto?<ImagePreview src={r.resolutionPhoto} alt="समाधान के बाद की फोटो" onOpen={(src,alt)=>setLightbox({src,alt})}/>:<p>समाधान की फोटो उपलब्ध नहीं है।</p>}<figcaption>समाधान के बाद</figcaption></figure></div><div className="resolution-meta"><span><CalendarDays size={14}/> {r.date}</span><button className="primary small-btn" onClick={()=>{setTrackId(r.id);setModal('track')}}>View Details</button></div></article>)}</div></section> : <section className="citizen-resolutions empty-state-panel"><div className="panel-heading"><h2><CheckCircle2/> हमारे सफल समाधान</h2></div><div className="empty-state-box"><CheckCircle2 size={26}/><p>अभी तक कोई हल हुई शिकायत उपलब्ध नहीं है। जैसे ही नगर निगम द्वारा समाधान की गई शिकायतें दर्ज होंगी, यहाँ दिखाई देंगी।</p></div></section>}
       <section className="bottom-grid"><div className="panel examples-panel"><div className="panel-heading"><h2><Camera/> उदाहरण तस्वीरें</h2><button className="link-btn" onClick={()=>setModal('report')}>शिकायत दर्ज करें <ArrowRight size={15}/></button></div><div className="examples">{categories.slice(0,7).map(c=><button key={c.key} onClick={()=>{setActiveCategory(c.key);setReportTitle(c.name);setModal('report')}}><img src={c.img} alt={c.name}/><b>{c.name}</b></button>)}</div><p className="example-note">ये केवल उदाहरण तस्वीरें हैं। अपनी शिकायत दर्ज करते समय वास्तविक फोटो अपलोड करें।</p></div><div className="panel mission-panel" id="about"><div className="panel-heading"><h2><Siren/> हमारा लक्ष्य</h2></div><div className="mission-items"><div><span><Leaf/></span><b>स्वच्छ शहर</b></div><div><span><ShieldCheck/></span><b>सुरक्षित शहर</b></div><div><span><Users/></span><b>सुविधाजनक शहर</b></div><div><span><Handshake/></span><b>सशक्त नागरिक</b></div></div></div></section>
       <section className="how-section"><div><span className="section-kicker">कैसे काम करता है</span><h2>आपकी शिकायत, हमारा संकल्प</h2><p>शिकायत दर्ज करें, उसकी स्थिति देखें और शहर को बेहतर बनाने में सहयोग करें।</p></div><div className="how-steps"><article><span>01</span><b>शिकायत दर्ज करें</b><small>समस्या की फोटो और स्थान जोड़ें।</small></article><article><span>02</span><b>प्रगति ट्रैक करें</b><small>अपनी Tracking ID से अपडेट देखें।</small></article><article><span>03</span><b>समाधान की पुष्टि</b><small>समस्या हल होने पर स्थिति अपडेट होगी।</small></article></div></section>
     </main>}
